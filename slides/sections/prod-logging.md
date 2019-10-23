@@ -2,105 +2,104 @@
 
 ---
 
-<section data-background-image="/img/prod/Slide5.PNG">
+The basic goal of logging is to get your application logs out of the container, so you can read them with `docker container logs` or `kubectl logs`.
+
+You can do log aggregation in your container platform, collecting and storing all the log entries from all your containers in a central system - but first you need to get them out from the container.
 
 ---
 
-This web app uses `log4net` which is [configured](./src/SignUp.Web/log4net.config) to write log entries to a file on the C drive.
+## Logging in console apps
 
-Those log entries are being written inside the container, we just need to read them from the file back out to Docker.
+That's easy for .NET Core apps - they run as console apps under the `dotnet` runtime.
 
----
+Any log entries written to the console appender (or `Console.WriteLine`) are written to the standard output stream, which is where Docker fetches log entries.
 
-[The new Dockerfile](./docker/prod-logging/signup-web/Dockerfile) uses a [Docker volume](https://docs.docker.com/storage/volumes/) for the path `C:\logs`, which is where the log file gets written. That means the log data is stored outside of the container using Docker's pluggable volume system.
-
-And the [startup script](./docker/prod-logging/signup-web/startup.ps1) has been extended, so it ends by tailing the log file - relaying all the log entries to the console, which Docker is monitoring.
-
----
-
-## Build the new image
-
-_Tag the image as `v4`, which includes logging:_
+_You've already seen these logs in the handlers:_
 
 ```
-docker image build -t dak4dotnet/signup-web:v4 `
-  -f ./docker/prod-logging/signup-web/Dockerfile .
+kubectl logs --selector component=index-handler
 ```
 
 ---
 
-## Run the app with logs
+## Logging in ASP.NET Core apps
 
-The [v7 manifest](./app/v7.yml) uses the upgraded web app, which echoes the existing `log4net` log entries back out to Docker. It also maps the log volume to a local directory on the VM.
+The same is true for .NET Core web apps, which also run as console apps and use the console appender by default.
 
-_Create the log folder and update the application:_
+_Check the logs for the REST API:_
 
 ```
-mkdir C:\web-logs
+kubectl logs --selector component=api
+```
 
-docker-compose -f .\app\v7.yml up -d
+> The logs are there, inside a file in the container - but Docker doesn't know about that.
+
+---
+
+## Logging to other sinks
+
+But some apps don't write to the console. Windows containers running ASP.NET apps on IIS are background processes so there's no console app for Docker to monitor.
+
+Those apps may write to another log sink, like the Event Log or a text file. The Blazor web app does this too - in [Program.cs]() you'll se it uses [Serilog]().
+
+_No console appender means there are no logs:_
+
+```
+kubectl logs --selector component=web
 ```
 
 ---
 
-## Check the web logs
+## Sidecar container
 
-The container startup script writes some initial output. 
+This is where sidecar containers are really useful. You run a second container in the same pod , whose role is just to echo logs from the app container.
 
-Check that before you open the website:
-
-```
-docker container logs app_signup-web_1
-```
-
-> You'll see the steps from the script prefixed with `STARTUP:`
+[k82/prod-logging/signup-web.yaml]() specifies a log-relay sidecar. The main app writes its log file to a shared `volumeMount`. The log relay uses `tail` to read out the logs
 
 ---
 
-## Browse to the app
+## Deploy the sidecar pod
 
-When the app is running, there are additional log entries written by `log4net`.
+"Sidecar" is just the name for a pattern where there's an extra container in the pod doing some ancillary work.
 
-Check out the app by browsing to the sign up page, and saving some data:
+_You deploy pods with sidecars in the same way:_
 
 ```
-firefox http://localhost:8020
+kubectl apply -f .\k8s\prod-logging
 ```
 
 ---
 
-## Check the logs again
+## Examine the pod setup
 
-Now look at the logs again:
+Now the pod has two containers. They share the same network space, and they have a shared filesystem in the `logs` volumes.
 
-```
-docker container logs app_signup-web_1
-```
-
-> You'll see entries from `log4net` flagged with `DEBUG` and `INFO` levels
-
----
-
-## Look at the logs on the host
-
-The app is writing the log file at the path `C:\logs` inside the container, but that's a volume which is being mapped fo `C:\web-logs` on the VM.
-
-It's transparent to the container, but that log file actually exists on the VM.
-
-_You can see the same data from the host:_
+_Describing the pod shows you the two containers:_
 
 ```
-cat C:\web-logs\SignUp.log
+kubectl describe pod --selector component=web
 ```
 
-> You can manage log storage outside of the container, and use a different storage device.
+## Check logs
+
+Now there are two containers in the pod, you need to specify which one you want with `kubectl exec` or `kubectl logs`.
+
+_Check the app logs are available now:_
+
+```
+kubectl logs --selector component=web
+
+kubectl logs --selector component=web --container signup-web
+
+kubectl logs --selector component=web --container signup-web-logs
+```
 
 ---
 
 ## Echoing logs to Docker
 
-This is a simple pattern to get logs from existing apps into Docker, without changing application code. 
+This is a simple pattern to get logs from existing apps into Docker, without changing application code.
 
-You can use it to echo logs from any source in the container - like log files or the [Event Log](https://github.com/Microsoft/mssql-docker/blob/a3020afeec9be1eb2d67645ac739438eb8f2c545/windows/mssql-server-windows-express/start.ps1#L75).
+You can use it to echo logs from any source in the container - like log files, ETW or the Event Log.
 
-Docker has a pluggable logging system, so as long as you get your logs into Docker, it can automatically ship them to Splunk, Elasticsearch etc.
+Container platforms have pluggable logging systems, so as long as you get your logs into Dockeryou can set them up to ship to Splunk, Elasticsearch etc.
