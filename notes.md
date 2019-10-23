@@ -8,6 +8,9 @@
 * rolling updates: if there's ongoing request, does kube wait for it to finish? 
 * canary updates?
 
+* dependencies - what if some dependency die over time?
+* metrics - better to split platform from app (i.e. appinsights)
+
 traefik is a revroxy that understands docker containers - its connecting to docker streaming API and listens for events (i.e. container was created, etc.). Can do the same with Kube.
 
 breaking up by business feature.
@@ -29,3 +32,9 @@ docker image should have a set of default configuration (makes things just work 
 Look in config files or env variables for overrides
 
 readiness: check my dependencies and die if some are not available. let platform (k8s) handle that.
+
+
+metrics: docker exposes them in Prometheus format
+
+
+when using 3rd party image, better to create own image from it and bake in own defaults for config

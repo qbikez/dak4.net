@@ -26,7 +26,9 @@ namespace SignUp.Api.ReferenceData
 
         public void Configure(IApplicationBuilder app, IHostingEnvironment env)
         {
+            // provides /metrics endpoint
             app.UseMetricServer();
+            // config default metrics to be exposed
             app.UseHttpMetrics();
 
             if (env.IsDevelopment())
