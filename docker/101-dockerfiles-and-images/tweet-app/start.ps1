@@ -9,4 +9,6 @@ Write-Output 'Flushing log file'
 netsh http flush logbuffer | Out-Null
 
 Write-Output 'Tailing log file'
+
+# relay log file content to console output (for docker)
 Get-Content -path 'c:\iislog\W3SVC\u_extend1.log' -Tail 1 -Wait
